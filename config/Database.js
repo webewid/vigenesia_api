@@ -1,6 +1,6 @@
 import Sequelize from 'sequelize'
 
-const db = new Sequelize('vigenesia_db','root','13.pt+map=2021',{
+const db = new Sequelize('vigenesia_db','root','password',{
     host: 'localhost',
     dialect: 'mysql'
 })
