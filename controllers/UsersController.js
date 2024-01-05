@@ -1,11 +1,22 @@
 import Users from "../models/UsersModel.js"
 import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
+import fs from "fs"
+import sharp from "sharp"
+import path from "path"
+
+function base64_encode(file) {
+    return "data:image/gif;base64,"+fs.readFileSync(file, 'base64');
+}
 
 export const Register = async(req,res) =>{
-    const { name, profesi, email, password } = req.body
+    const { name, email, password, pertanyaan, jawaban } = req.body
     const salt = await bcrypt.genSalt()
     const hashPassword = await bcrypt.hash(password, salt)
+    const hashJawaban = await bcrypt.hash(jawaban, salt)
+    const hashPertanyaan = await bcrypt.hash(pertanyaan, salt)
+    const hashPanggilan = await bcrypt.hash(email, salt)
+    const enHashPanggilan = hashPanggilan.replace(/[^\w\s]/gi, '')
     try {
         const response = await Users.findOne({
             where:{
@@ -17,9 +28,11 @@ export const Register = async(req,res) =>{
         }else{
             await Users.create({
                 name: name,
-                profesi: profesi,
                 email: email,
                 password: hashPassword,
+                pertanyaan: hashPertanyaan,
+                jawaban: hashJawaban,
+                panggilan: enHashPanggilan
             })
             res.status(202).json({msg: "Register Berhasil"})
         }
@@ -41,10 +54,11 @@ export const Login = async(req,res)=>{
         const name = user.name
         const profesi = user.profesi
         const email = user.email
-        const accessToken = jwt.sign({userId,name,profesi,email}, process.env.ACCESS_TOKEN_SECRET,{
+        const panggilan = user.panggilan
+        const accessToken = jwt.sign({userId,name,profesi,email,panggilan}, process.env.ACCESS_TOKEN_SECRET,{
             expiresIn: '20s'
         })
-        const refreshToken = jwt.sign({userId,name,profesi,email}, process.env.REFRESH_TOKEN_SECRET,{
+        const refreshToken = jwt.sign({userId,name,profesi,email,panggilan}, process.env.REFRESH_TOKEN_SECRET,{
             expiresIn: '10h'
         })
         await Users.update({refresh_token: refreshToken},{
@@ -79,4 +93,56 @@ export const Logout = async(req,res) => {
     })
     res.clearCookie('refreshToken')
     return res.sendStatus(200)
+}
+
+export const UpdateProfil = async(req,res) =>{
+    try {
+        //ambil file
+        const foto = req.file
+        const newFileName = "kompres"+foto.filename
+        // Kompres Image
+        await sharp(foto.path).jpeg({ quality: 50 }).toFile(path.resolve(foto.destination,newFileName))
+        fs.unlinkSync(foto.path)
+        // Image ke base64
+        var base64str = base64_encode(foto.destination+"/"+newFileName);
+        // Kondisi
+        if(foto.mimetype == 'image/png' || foto.mimetype == 'image/jpeg' || foto.mimetype == 'image/jpg'){
+            try {
+                await Users.update({
+                    urlFoto: base64str,
+                    foto: newFileName,
+                    name: req.body.name,
+                    profesi: req.body.profesi,
+                },{
+                    where:{
+                        panggilan: req.body.panggilan
+                    }
+                })
+                const filepath = `./public/images/${newFileName}`;
+                fs.unlinkSync(filepath);
+                res.status(200).json({msg: "Berhasil di Ubah"})
+            } catch (error) {
+                console.log(error.message)
+            }
+        }else{
+            const filepath = `./public/images/${newFileName}`;
+            fs.unlinkSync(filepath);
+            res.status(404).json({msg: "Extension foto harus PNG/JPEG ya"})
+        }
+    } catch (error) {
+        console.log(error.message)
+    }
+}
+
+export const SelectProfil = async(req,res) =>{
+    try {
+        const response = await Users.findOne({
+            where:{
+                panggilan : req.params.panggilanParams
+            }
+        })
+        res.json(response)
+    } catch (error) {
+        console.log(error.message)
+    }
 }
